@@ -3,6 +3,9 @@ import random
 import shutil
 
 def split_dataset(source_root, dest_root, val_frac=0.2, seed=42):
+    '''
+    Takes data and splits into train (80%) and val (20%) folders
+    '''
     random.seed(seed)
     classes = [d for d in os.listdir(source_root) if os.path.isdir(os.path.join(source_root, d))]
     for cls in classes:
@@ -19,7 +22,6 @@ def split_dataset(source_root, dest_root, val_frac=0.2, seed=42):
                 shutil.copyfile(os.path.join(src_dir, fname), os.path.join(out_dir, fname))
 
 if __name__ == '__main__':
-    # Example usage (adjust paths if needed)
     src = os.path.join(os.path.dirname(__file__), '..', 'train')
     src = os.path.abspath(src)
     dst = os.path.join(os.path.dirname(__file__), '..', 'data')
