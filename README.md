@@ -65,3 +65,23 @@ Current observed outputs (from the latest demo run):
 
 If you want changes to the repository layout or behaviour, tell me which specific files or structure you prefer and I will update the code and README accordingly.
 
+Running the AVS-lab-based detector
+
+You can run the AVS detector with optional tuning parameters from the repository root. Example commands:
+
+1) Run with defaults (more conservative thresholds):
+
+	.venv\Scripts\python -m scripts.run_avs_detector
+
+2) Run and tune thresholds (reduce false positives by increasing `--k-num`):
+
+	.venv\Scripts\python -m scripts.run_avs_detector --k-num 4.0 --k-hole 1.5 --mode or
+
+3) Use the stricter 'and' combination rule (both conditions must hold to flag defect):
+
+	.venv\Scripts\python -m scripts.run_avs_detector --mode and
+
+Notes:
+- Edit `scripts/avs_detector.py` `train_thresholds` defaults or pass `--k-num/--k-hole` to the runner to change behaviour.
+- The runner evaluates on `data/train` by default (the demo previously created `data/`). If you want to evaluate on `data/val`, update `scripts/run_avs_detector.py` accordingly.
+
