@@ -110,6 +110,23 @@ def evaluate(df, thr_area, thr_holes):
         (df['holes_area'] > thr_holes)
     ).astype(int)
     
+    print("\n--- Analiza poszczególnych zdjęć ---")
+    # Pętla wypisująca decyzję dla każdego zdjęcia
+    for i in range(len(df)):
+        file_name = os.path.basename(df['file'].iloc[i])
+        
+        # Formatowanie etykiet dla lepszej czytelności w konsoli
+        true_label = "ZEPSUTA" if df['label'].iloc[i] == 1 else "DOBRA  "
+        pred_label = "ZEPSUTA" if preds.iloc[i] == 1 else "DOBRA  "
+        
+        b_area = df['bristle_area'].iloc[i]
+        h_area = df['holes_area'].iloc[i]
+        
+        # Znacznik, czy algorytm ocenił poprawnie
+        marker = "✅" if true_label == pred_label else "❌"
+        
+        print(f"{marker} {file_name:<20} | Rzeczywistość: {true_label} | Decyzja algorytmu: {pred_label} | (Włosie: {b_area:.0f}, Dziury: {h_area:.0f})")
+    
     y_true = df['label'].astype(int)
     report = classification_report(y_true, preds, zero_division=0)
     cm = confusion_matrix(y_true, preds)
