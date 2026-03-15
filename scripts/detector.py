@@ -31,19 +31,25 @@ def gather_features(data_root, gt_root=None):
     return pd.DataFrame(rows)
 
 
-def train_rule_thresholds(df, k_density=1.5, k_void=1.5):
+def train_rule_thresholds(df, k_density=1.5, k_void=1.5, k_area=2.0):
     goods = df[df['label'] == 0]
     d_mean = goods['density'].mean()
     d_std = goods['density'].std()
     v_mean = goods['void_frac'].mean()
     v_std = goods['void_frac'].std()
+
+    a_mean = goods['bristle_area'].mean()
+    a_std = goods['bristle_area'].std()
+
     thr_density = float(d_mean - k_density * (d_std if not pd.isna(d_std) else 0.0))
     thr_void = float(v_mean + k_void * (v_std if not pd.isna(v_std) else 0.0))
+
+    thr_area = float(a_mean + k_area * (a_std if not pd.isna(a_std) else 0.0))
     return thr_density, thr_void
 
 
-def evaluate(df, thr_density, thr_void):
-    preds = ((df['density'] < thr_density) | (df['void_frac'] > thr_void)).astype(int)
+def evaluate(df, thr_density, thr_void, thr_area):
+    preds = ((df['density'] < thr_density) | (df['void_frac'] > thr_void) | (df['bristle_area'] > thr_area)).astype(int)
     y_true = df['label'].astype(int)
     report = classification_report(y_true, preds, zero_division=0)
     cm = confusion_matrix(y_true, preds)
@@ -55,8 +61,8 @@ if __name__ == '__main__':
     data_train = os.path.join(base, 'data', 'train')
     gt = os.path.join(base, 'ground_truth', 'defective')
     df = gather_features(data_train, gt_root=gt)
-    thr_d, thr_v = train_rule_thresholds(df)
+    thr_d, thr_v , thr_a= train_rule_thresholds(df)
     print('thresholds: density=', thr_d, ' void=', thr_v)
-    report, cm = evaluate(df, thr_d, thr_v)
+    report, cm = evaluate(df, thr_d, thr_v, thr_a)
     print(report)
     print('confusion matrix:\n', cm)

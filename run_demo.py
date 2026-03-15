@@ -25,8 +25,8 @@ def main():
         df = gather_features(processed_train, gt_root=os.path.join(base, 'ground_truth', 'defective'))
     else:
         df = gather_features(data_train, gt_root=os.path.join(base, 'ground_truth', 'defective'))
-    thr_d, thr_v = train_rule_thresholds(df)
-    report, cm = evaluate(df, thr_d, thr_v)
+    thr_d, thr_v , thr_a= train_rule_thresholds(df)
+    report, cm = evaluate(df, thr_d, thr_v, thr_a)
     print('--- Rule-based detector results ---')
     print('thresholds: density=', thr_d, ' void=', thr_v)
     print(report)

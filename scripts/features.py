@@ -93,6 +93,23 @@ def mean_intensity(image_path, mask_path=None):
         return float((img * mask).sum()) / float(area)
     else:
         return float(img.mean())
+    
+def compute_bristle_area(image_path, threshold_value=35, crop_x=0):
+    # Wczytanie używając istniejącej funkcji w projekcie, żeby zachować spójność
+    img = _read_gray(image_path)
+    
+    # 1. Kadrowanie (ROI)
+    img_cropped = img[:, crop_x:-crop_x]
+        
+    # 2. Preprocessing
+    _, img_bin = cv2.threshold(img_cropped, threshold_value, 255, cv2.THRESH_BINARY)
+    img_med = cv2.medianBlur(img_bin, 5)
+    kernel = np.ones((5, 5), np.uint8)
+    img_ero = cv2.erode(img_med, kernel, iterations=1)
+    img_processed = cv2.dilate(img_ero, kernel, iterations=2)
+    
+    # 3. Zwracamy samą liczbę białych pikseli
+    return float(np.count_nonzero(img_processed))
 
 
 def extract_features(image_path, mask_path=None):
@@ -100,7 +117,8 @@ def extract_features(image_path, mask_path=None):
         'density': compute_bristle_density(image_path, mask_path=mask_path),
         'void_frac': compute_void_fraction(image_path, mask_path=mask_path),
         'edge_density': edge_density(image_path, mask_path=mask_path),
-        'mean_intensity': mean_intensity(image_path, mask_path=mask_path)
+        'mean_intensity': mean_intensity(image_path, mask_path=mask_path),
+        'bristle_area': compute_bristle_area(image_path)
     }
 
 
