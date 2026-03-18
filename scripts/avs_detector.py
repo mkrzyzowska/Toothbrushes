@@ -5,113 +5,80 @@ import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix
 
 
-def compute_bristle_area(img_path, threshold_value=35, crop_x=200):
-    """Zlicza powierzchnię samego włosia."""
+def fiber_score(img_path, crop_x=200):
+
     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if img is None: return 0.0
-    
-    h, w = img.shape[:2]
-    if crop_x == 0 or w <= 2 * crop_x: img_cropped = img
-    else: img_cropped = img[:, crop_x:-crop_x]
-        
-    if img_cropped.size == 0: return 0.0
-        
-    _, img_bin = cv2.threshold(img_cropped, threshold_value, 255, cv2.THRESH_BINARY)
-    if img_bin.size == 0: return 0.0
-        
-    img_med = cv2.medianBlur(img_bin, 5)
-    kernel = np.ones((5, 5), np.uint8)
-    img_ero = cv2.erode(img_med, kernel, iterations=1)
-    img_processed = cv2.dilate(img_ero, kernel, iterations=2)
-    
-    return float(np.count_nonzero(img_processed))
+
+    h, w = img.shape
+    if w > 2 * crop_x:
+        img = img[:, crop_x:-crop_x]
+
+    img = cv2.GaussianBlur(img, (5,5), 0)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15,15))
+    tophat = cv2.morphologyEx(img, cv2.MORPH_TOPHAT, kernel)
+
+    _, th = cv2.threshold(tophat, 40, 255, cv2.THRESH_BINARY)
+
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(th)
+
+    score = 0
+    for i in range(1, num):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if 10 < area < 400:
+            score += area
+
+    return score
 
 
-def compute_holes_area(img_path, threshold_value=35, crop_x=200):
-    """Wyłapuje i zlicza powierzchnię brakujących kępek (dziur)."""
-    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if img is None: return 0.0
-    
-    # Bezpieczne cięcie
-    h, w = img.shape[:2]
-    if crop_x == 0 or w <= 2 * crop_x: img_cropped = img
-    else: img_cropped = img[:, crop_x:-crop_x]
-        
-    if img_cropped.size == 0: return 0.0
-        
-    # 1. Binaryzacja i czyszczenie szumów
-    _, img_bin = cv2.threshold(img_cropped, threshold_value, 255, cv2.THRESH_BINARY)
-    img_med = cv2.medianBlur(img_bin, 5)
-    
-    # 2. Morfologiczne zamykanie - zakleja dziury wewnątrz włosia
-    # Używamy owalnego kształtu jądra o rozmiarze 25x25 (wystarczająco duże by pokryć brak kępki)
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
-    img_closed = cv2.morphologyEx(img_med, cv2.MORPH_CLOSE, kernel_close)
-    
-    # 3. Magia: odejmujemy oryginał od zaklejonego. Zostają SAME dziury!
-    holes_only = cv2.subtract(img_closed, img_med)
-    
-    # 4. Zwracamy pole powierzchni wykrytych dziur
-    return float(np.count_nonzero(holes_only))
+def gather_features(dataset_path):
 
-
-def analyze_image(img_path):
-    """Zwraca słownik z dwiema cechami."""
-    return {
-        'bristle_area': compute_bristle_area(img_path),
-        'holes_area': compute_holes_area(img_path)
-    }
-
-
-def gather_features(data_root):
     rows = []
-    for cls in ['good', 'defective']:
-        dirpath = os.path.join(data_root, cls)
-        if not os.path.isdir(dirpath): continue
-        for f in sorted(os.listdir(dirpath)):
-            if not f.lower().endswith('.png'): continue
-            
-            img_path = os.path.join(dirpath, f)
-            feats = analyze_image(img_path)
-            
-            label = 1 if cls == 'defective' else 0
-            row = {'file': img_path, 'label': label}
-            row.update(feats)
-            rows.append(row)
-            
+
+    for label_name in os.listdir(dataset_path):
+
+        label_path = os.path.join(dataset_path, label_name)
+
+        if not os.path.isdir(label_path):
+            continue
+
+        label = 0 if label_name.lower() == "good" else 1
+
+        for f in os.listdir(label_path):
+
+            if not f.lower().endswith(".png"):
+                continue
+
+            img_path = os.path.join(label_path, f)
+
+            score = fiber_score(img_path)
+
+            rows.append({
+                "file": f,
+                "fiber_score": score,
+                "label": label
+            })
+
     return pd.DataFrame(rows)
 
 
-def train_thresholds(df, k_area=2.0, k_holes=3.0):
-    """Wylicza progi dla obu defektów na podstawie dobrych szczoteczek."""
-    goods = df[df['label'] == 0]
-    
-    # Próg 1: Wystające włoski (powierzchnia)
-    area_mean = goods['bristle_area'].mean()
-    area_std = goods['bristle_area'].std()
-    thr_area = float(area_mean + k_area * (area_std if not pd.isna(area_std) else 0.0))
-    
-    # Próg 2: Dziury (idealna szczoteczka powinna mieć pole dziur bliskie 0)
-    holes_mean = goods['holes_area'].mean()
-    holes_std = goods['holes_area'].std()
-    thr_holes = float(holes_mean + k_holes * (holes_std if not pd.isna(holes_std) else 0.0))
-    
-    return thr_area, thr_holes
+def train_thresholds(df_train, k_area=2.0, k_holes=3.0):
+
+    good = df_train[df_train["label"] == 0]
+
+    mean = good["fiber_score"].mean()
+    std = good["fiber_score"].std()
+
+    thr = mean + k_area * std
+
+    return thr, 0
 
 
 def evaluate(df, thr_area, thr_holes):
-    """
-    Szczoteczka jest ZEPSUTA (1), jeśli:
-    - ma za dużo białych pikseli (wystające włoski) LUB
-    - ma za duże pole wewnętrznych dziur (brak kępki)
-    """
-    preds = (
-        (df['bristle_area'] > thr_area) | 
-        (df['holes_area'] > thr_holes)
-    ).astype(int)
-    
-    y_true = df['label'].astype(int)
-    report = classification_report(y_true, preds, zero_division=0)
-    cm = confusion_matrix(y_true, preds)
-    
+
+    preds = (df["fiber_score"] > thr_area).astype(int)
+
+    report = classification_report(df["label"], preds)
+    cm = confusion_matrix(df["label"], preds)
+
     return report, cm

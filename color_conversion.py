@@ -3,40 +3,40 @@ import os
 
 src_root = "original_dataset/train"
 
-color_spaces = {
-    "HSV": cv2.COLOR_BGR2HSV,
-    "HLS": cv2.COLOR_BGR2HLS,
-    "LAB": cv2.COLOR_BGR2LAB,
-    "YCrCb": cv2.COLOR_BGR2YCrCb
-}
+# color_spaces = {
+#     "HSV": cv2.COLOR_BGR2HSV,
+#     "HLS": cv2.COLOR_BGR2HLS,
+#     "LAB": cv2.COLOR_BGR2LAB,
+#     "YCrCb": cv2.COLOR_BGR2YCrCb
+# }
 
 classes = ["good", "defective"]
 
-for space, code in color_spaces.items():
+# for space, code in color_spaces.items():
 
-    dst_root = f"dataset_{space}/train"
+#     dst_root = f"dataset_{space}/train"
 
-    for cls in classes:
+#     for cls in classes:
 
-        src_dir = os.path.join(src_root, cls)
-        dst_dir = os.path.join(dst_root, cls)
+#         src_dir = os.path.join(src_root, cls)
+#         dst_dir = os.path.join(dst_root, cls)
 
-        os.makedirs(dst_dir, exist_ok=True)
+#         os.makedirs(dst_dir, exist_ok=True)
 
-        for file in os.listdir(src_dir):
+#         for file in os.listdir(src_dir):
 
-            if not file.endswith(".png"):
-                continue
+#             if not file.endswith(".png"):
+#                 continue
 
-            path = os.path.join(src_dir, file)
+#             path = os.path.join(src_dir, file)
 
-            img = cv2.imread(path)
+#             img = cv2.imread(path)
 
-            converted = cv2.cvtColor(img, code)
+#             converted = cv2.cvtColor(img, code)
 
-            out_path = os.path.join(dst_dir, file)
+#             out_path = os.path.join(dst_dir, file)
 
-            cv2.imwrite(out_path, converted)
+#             cv2.imwrite(out_path, converted)
 
 
 dst_root = "dataset_HLS_GRAY/train"
