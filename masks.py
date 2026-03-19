@@ -2,122 +2,140 @@ import cv2
 import numpy as np
 import os
 
-def get_defect_mask(img):
+# --- USTAWIENIA ŚCIEŻEK ---
+TRAIN_GOOD_PATH = "split_dataset/train/good"
+VAL_PATH = "split_dataset/val"
+CLASSES = ["good", "defective"]
 
-    # --- 1. Preprocess ---
-    blur = cv2.GaussianBlur(img, (7,7), 0)
-    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+def train_baseline(train_folder):
+    """
+    Tworzy "strefę bezpieczeństwa" na podstawie poprawnych szczoteczek.
+    """
+    print(f"Rozpoczynam trening na danych z: {train_folder}...")
+    
+    if not os.path.exists(train_folder):
+        print(f"BŁĄD: Nie znaleziono folderu {train_folder}!")
+        return None
 
-    # --- 2. Toothbrush segmentation (white plastic) ---
-    gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
-    _, mask_body = cv2.threshold(gray, 0, 255,
-                                 cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    sum_shape = None
+    img_count = 0
 
-    # keep biggest object (toothbrush)
-    cnts, _ = cv2.findContours(mask_body, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    c = max(cnts, key=cv2.contourArea)
-    mask_body = np.zeros_like(mask_body)
-    cv2.drawContours(mask_body, [c], -1, 255, -1)
+    for fname in os.listdir(train_folder):
+        if not fname.endswith(".png"):
+            continue
 
-    # --- 3. Extract bristles region ---
-    # remove smooth plastic -> keep only high texture areas
-    edges = cv2.Canny(gray, 50, 150)
-    mask_bristles = cv2.bitwise_and(edges, mask_body)
+        path = os.path.join(train_folder, fname)
+        img = cv2.imread(path)
+        if img is None: continue
 
-    # dilate to fill clusters
-    kernel = np.ones((5,5), np.uint8)
-    mask_bristles = cv2.morphologyEx(edges, cv2.MORPH_CLOSE,
-                                    np.ones((3,3), np.uint8))
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 35, 255, cv2.THRESH_BINARY)
 
-    mask_bristles = cv2.morphologyEx(mask_bristles, cv2.MORPH_OPEN,
-                                    np.ones((3,3), np.uint8))
-    # --- 4. Color anomaly detection ---
-    # GOOD toothbrush → yellow/white clusters
-    # BAD → strange colors (red, dark, etc.)
+        if sum_shape is None:
+            sum_shape = np.zeros_like(thresh, dtype=np.float32)
+        
+        sum_shape += (thresh / 255.0)
+        img_count += 1
 
-    # mask expected colors (white + yellow)
-    lower_white = np.array([0, 0, 180])
-    upper_white = np.array([180, 60, 255])
+    if img_count == 0:
+        return None
 
-    lower_yellow = np.array([15, 80, 100])
-    upper_yellow = np.array([40, 255, 255])
+    # Tworzymy powłokę (strefę bezpieczeństwa). 
+    # Jeśli piksel był biały chociażby na 2% poprawnych zdjęć, uznajemy go za bezpieczny twardy margines.
+    safe_zone = np.zeros_like(sum_shape, dtype=np.uint8)
+    safe_zone[sum_shape > (0.02 * img_count)] = 255
 
-    mask_white = cv2.inRange(hsv, lower_white, upper_white)
-    mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+    # Dylatacja (pogrubienie) strefy bezpieczeństwa.
+    # Dajemy szczoteczce 3 piksele "luzu" na wypadek drobnego przesunięcia pod kamerą.
+    kernel_dilate = np.ones((5,5), np.uint8)
+    safe_zone = cv2.dilate(safe_zone, kernel_dilate, iterations=1)
 
-    mask_good_color = cv2.bitwise_or(mask_white, mask_yellow)
+    print(f"Trening zakończony! Przeanalizowano {img_count} zdjęć.")
+    return safe_zone
 
-    # defects = NOT expected colors but inside bristles
+def get_defect_mask(img, safe_zone):
+    """
+    Szuka pikseli, które wychodzą poza wyuczoną strefę bezpieczeństwa.
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 35, 255, cv2.THRESH_BINARY)
+    
+    # Wyciągamy tylko to, co wystaje POZA strefę bezpieczeństwa
+    not_safe_zone = cv2.bitwise_not(safe_zone)
+    out_of_bounds = cv2.bitwise_and(thresh, not_safe_zone)
+    
+    # Usuwamy pojedyncze kropeczki (szum z matrycy), żeby nie było fałszywych alarmów
+    kernel_clean = np.ones((3,3), np.uint8)
+    defect_mask = cv2.morphologyEx(out_of_bounds, cv2.MORPH_OPEN, kernel_clean)
+    
+    # Zliczamy, ile pikseli faktycznie wystaje
+    defect_area = cv2.countNonZero(defect_mask)
+    
+    # Jeśli wystaje więcej niż np. 15 pikseli, uznajemy to za wadliwy włosek
+    MIN_DEFECT_PIXELS = 15 
+    
+    if defect_area > MIN_DEFECT_PIXELS:
+        # Możemy lekko pogrubić maskę defektu, żeby czerwona plama była lepiej widoczna na ekranie
+        vis_mask = cv2.dilate(defect_mask, np.ones((5,5), np.uint8), iterations=1)
+        return vis_mask, True
+    else:
+        # Jeśli nic nie wystaje (lub to tylko np. 5 pikseli szumu), szczoteczka jest OK
+        empty_mask = np.zeros_like(thresh)
+        return empty_mask, False
 
-    # --- 5. Structural defects (broken / sparse clusters) ---
-    # remove small noise first
-    clean = cv2.morphologyEx(mask_bristles, cv2.MORPH_OPEN,
-                             np.ones((3,3), np.uint8))
+def process_folder_val(folder, safe_zone):
+    if not os.path.exists(folder):
+        print(f"Brak folderu: {folder}")
+        return False
 
-    # --- 4. Detect bristle clusters properly ---
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_bristles)
-
-    mask_defects = np.zeros_like(mask_bristles)
-
-    areas = stats[1:, cv2.CC_STAT_AREA]  # skip background
-    mean_area = np.mean(areas)
-
-    for i in range(1, num_labels):
-
-        area = stats[i, cv2.CC_STAT_AREA]
-
-        # detect abnormal clusters
-        if area < 0.4 * mean_area or area > 2.5 * mean_area:
-            mask_defects[labels == i] = 255
-
-
-    # --- 7. Final cleanup ---
-    mask_defects = cv2.morphologyEx(mask_defects,
-                                   cv2.MORPH_CLOSE,
-                                   np.ones((5,5), np.uint8))
-
-    return mask_defects
-
-def process_folder(folder):
-
-    for fname in os.listdir(folder):
-
+    for fname in sorted(os.listdir(folder)):
         if not fname.endswith(".png"):
             continue
 
         path = os.path.join(folder, fname)
         img = cv2.imread(path)
+        if img is None: continue
 
-        if img is None:
-            continue
+        # Pobieramy maskę i werdykt (True = zepsuta, False = dobra)
+        mask, is_defective = get_defect_mask(img, safe_zone)
 
-        img = cv2.resize(img, None, fx=0.5, fy=0.5,
-                 interpolation=cv2.INTER_AREA)
+        # Wypisywanie werdyktu w terminalu z odpowiednim oznaczeniem
+        verdict_text = "[!!! DEFECTIVE !!!]" if is_defective else "[OK - GOOD]"
+        print(f"Plik: {fname:<20} | Werdykt: {verdict_text}")
 
-        mask = get_defect_mask(img)
-
-        # visualization
+        # Rysowanie defektów
         vis = img.copy()
-        vis[mask > 0] = [0, 0, 255]  # mark defects in red
+        vis[mask > 0] = [0, 0, 255]
 
-        combined = np.hstack([img, cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR), vis])
+        # Wyświetlanie (skalowanie w dół dla wygody)
+        img_disp = cv2.resize(img, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        mask_disp = cv2.resize(mask, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
+        vis_disp = cv2.resize(vis, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
 
-        cv2.imshow("image | mask | result", combined)
-        key = cv2.waitKey(0)
+        mask_bgr = cv2.cvtColor(mask_disp, cv2.COLOR_GRAY2BGR)
+        combined = np.hstack([img_disp, mask_bgr, vis_disp])
 
-        if key == 27:  # ESC to quit
-            return
+        cv2.imshow("Original | Defect Mask | Result", combined)
         
-BASE_PATH = "original_dataset/train"
-CLASSES = ["good", "defective"]
+        key = cv2.waitKey(0)
+        if key == 27:  # ESC
+            return True 
+
+    return False
 
 if __name__ == "__main__":
+    print("--- ETAP 1: UCZENIE (TWORZENIE STREFY BEZPIECZEŃSTWA) ---")
+    safe_zone = train_baseline(TRAIN_GOOD_PATH)
 
-
-    for cls in CLASSES:
-        folder = os.path.join(BASE_PATH, cls)
-        print(f"Processing: {cls}")
-
-        process_folder(folder)
+    if safe_zone is not None:
+        print("\n--- ETAP 2: TESTOWANIE ---")
+        
+        for cls in CLASSES:
+            val_folder = os.path.join(VAL_PATH, cls)
+            print(f"\n---> Otwieram folder: {cls.upper()}")
+            
+            stop_program = process_folder_val(val_folder, safe_zone)
+            if stop_program:
+                break
 
     cv2.destroyAllWindows()

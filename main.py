@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 from check_for_holes import check_for_holes
-from scripts.avs_detector import show_hole_detection
+#from scripts.avs_detector import show_hole_detection
 
 def main():
     '''
@@ -29,7 +29,7 @@ def main():
                 continue
             in_path = os.path.join(root, f)
 
-            show_hole_detection(in_path)
+            #show_hole_detection(in_path)
 
             defect = False
 
@@ -51,9 +51,9 @@ def main():
             mask = cv2.resize(mask,None,fx=scale,fy=scale)
             debug = cv2.resize(debug,None,fx=scale,fy=scale)
 
-            # cv2.imshow("result", img)
-            # cv2.imshow("mask", mask)
-            # cv2.imshow("debug contours", debug)
+            cv2.imshow("result", img)
+            cv2.imshow("mask", mask)
+            cv2.imshow("debug contours", debug)
 
             if cv2.waitKey(0) == 27:
                 break
